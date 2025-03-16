@@ -3,6 +3,8 @@
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
+    <OutputType>Library</OutputType>
+    <ProduceReferenceAssembly>true</ProduceReferenceAssembly>
   </PropertyGroup>
 
   <ItemGroup>
@@ -12,6 +14,8 @@
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" />
     <PackageReference Include="Scalar.AspNetCore" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
@@ -22,5 +26,6 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.GrpcNetClient" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
+    <PackageReference Include="Serilog" />
   </ItemGroup>
 </Project>

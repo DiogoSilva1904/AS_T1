@@ -4,11 +4,26 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Pgvector.EntityFrameworkCore;
+using OpenTelemetry.Trace;
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
+//using Microsoft.Extensions.Logging;
 
 namespace eShop.Catalog.API;
 
 public static class CatalogApi
 {
+    private static readonly ActivitySource CatalogtActivitySource = new("OpenTelemetry.As.Catalog");
+    private static readonly Meter Meter = new Meter("eShop.CatalogApi.Metrics");
+    
+    private static readonly Counter<int> ProductVisitCounter =
+        Meter.CreateCounter<int>("catalog_product_visits", description: "Tracks the number of visits to each catalog product");
+
+    private static readonly Counter<int> UserItemClickCounter =
+        Meter.CreateCounter<int>("catalog_item_clicks", description: "Tracks the number of times a user clicks on a catalog item");
+
+
+
     public static IEndpointRouteBuilder MapCatalogApi(this IEndpointRouteBuilder app)
     {
         // RouteGroupBuilder for catalog endpoints
@@ -128,35 +143,55 @@ public static class CatalogApi
         [Description("The type of items to return")] int? type,
         [Description("The brand of items to return")] int? brand)
     {
-        var pageSize = paginationRequest.PageSize;
-        var pageIndex = paginationRequest.PageIndex;
+        var activity = Activity.Current;
 
-        var root = (IQueryable<CatalogItem>)services.Context.CatalogItems;
+        activity?.SetTag("catalog.items.filter.name", name ?? "none");
+        activity?.SetTag("catalog.items.filter.type", type?.ToString() ?? "none");
+        activity?.SetTag("catalog.items.filter.brand", brand?.ToString() ?? "none");
 
-        if (name is not null)
+        try
         {
-            root = root.Where(c => c.Name.StartsWith(name));
+            var pageSize = paginationRequest.PageSize;
+            var pageIndex = paginationRequest.PageIndex;
+
+            var root = (IQueryable<CatalogItem>)services.Context.CatalogItems;
+
+            if (name is not null)
+            {
+                root = root.Where(c => c.Name.StartsWith(name));
+            }
+            if (type is not null)
+            {
+                root = root.Where(c => c.CatalogTypeId == type);
+            }
+            if (brand is not null)
+            {
+                root = root.Where(c => c.CatalogBrandId == brand);
+            }
+
+            var totalItems = await root.LongCountAsync();
+
+
+            var itemsOnPage = await root
+                .OrderBy(c => c.Name)
+                .Skip(pageSize * pageIndex)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return TypedResults.Ok(new PaginatedItems<CatalogItem>(pageIndex, pageSize, totalItems, itemsOnPage));
         }
-        if (type is not null)
+        catch (Exception ex)
         {
-            root = root.Where(c => c.CatalogTypeId == type);
+            // If any error occurs, set the span status to Error
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw;
         }
-        if (brand is not null)
+        finally
         {
-            root = root.Where(c => c.CatalogBrandId == brand);
         }
-
-        var totalItems = await root
-            .LongCountAsync();
-
-        var itemsOnPage = await root
-            .OrderBy(c => c.Name)
-            .Skip(pageSize * pageIndex)
-            .Take(pageSize)
-            .ToListAsync();
-
-        return TypedResults.Ok(new PaginatedItems<CatalogItem>(pageIndex, pageSize, totalItems, itemsOnPage));
     }
+
+
 
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     public static async Task<Ok<List<CatalogItem>>> GetItemsByIds(
@@ -171,6 +206,7 @@ public static class CatalogApi
     public static async Task<Results<Ok<CatalogItem>, NotFound, BadRequest<ProblemDetails>>> GetItemById(
         HttpContext httpContext,
         [AsParameters] CatalogServices services,
+        //ILogger<CatalogApi> logger,
         [Description("The catalog item id")] int id)
     {
         if (id <= 0)
@@ -182,10 +218,29 @@ public static class CatalogApi
 
         var item = await services.Context.CatalogItems.Include(ci => ci.CatalogBrand).SingleOrDefaultAsync(ci => ci.Id == id);
 
+        var activity = Activity.Current;
+
+        activity?.SetTag("catalog.item.id", id.ToString());
+        activity?.SetTag("catalog.item.name", item?.Name ?? "none");
+        activity?.SetTag("catalog.item.type", item?.CatalogTypeId.ToString() ?? "none");
+        activity?.SetTag("catalog.item.brand", item?.CatalogBrandId.ToString() ?? "none");
+        activity?.SetTag("catalog.item.price", item?.Price.ToString() ?? "none");
+        
+        var userEmail = httpContext.User?.Identity?.Name ?? "diogo@gmail.com";
+        activity?.SetTag("user.email", userEmail);
+
+        //logger.LogInformation("Fetching details for item with id: {Id} by user: {User}", id, userEmail); // Mask the email
+
+
         if (item == null)
         {
             return TypedResults.NotFound();
         }
+
+        var userId = httpContext.User?.Identity?.Name ?? "unknown_user"; 
+        UserItemClickCounter.Add(1, new KeyValuePair<string, object>("user_id", userId));
+
+       ProductVisitCounter.Add(1, new KeyValuePair<string, object>("product_id", id));
 
         return TypedResults.Ok(item);
     }
@@ -196,6 +251,10 @@ public static class CatalogApi
         [AsParameters] CatalogServices services,
         [Description("The name of the item to return")] string name)
     {
+
+        var activity = Activity.Current;
+        activity.SetTag("catalog.items.filter.used.name", name ?? "true");
+
         return await GetAllItems(paginationRequest, services, name, null, null);
     }
 
@@ -287,7 +346,10 @@ public static class CatalogApi
         [AsParameters] CatalogServices services,
         [Description("The type of items to return")] int typeId,
         [Description("The brand of items to return")] int? brandId)
-    {
+    {   
+
+        var activity = Activity.Current;
+
         return await GetAllItems(paginationRequest, services, null, typeId, brandId);
     }
 

@@ -1,3 +1,36 @@
+# eShop Reference Application - "AdventureWorks" for class AS from Diogo Silva N_Mec:107647
+
+## Running the Project with OpenTelemetry Integration
+
+To run the project with OpenTelemetry integration, simply use the following command in the root directory:
+
+```bash
+dotnet run --project src/eShop.AppHost/eShop.AppHost.csproj
+```
+
+All the containers needed for the Open Telemetry integration will be running in the .NET dashboard, as can be seen in the following image:
+
+![.NET Dashboard](img/dashboard.png)
+ 
+## Accessing OpenTelemetry Services
+
+The following endpoints are available to access the OpenTelemetry services:
+
+- **Grafana**: [http://localhost:3000/grafana/](http://localhost:3000/grafana/)
+- **Prometheus**: [http://localhost:9090/query](http://localhost:9090/query)
+- **Jaeger**: [http://localhost:16686/search](http://localhost:16686/search)
+
+## Running the Load Generator Script
+
+To generate load and evaluate the performance of the application, run the load generator script with the following command:
+
+```bash
+k6 run load_test.js
+
+
+```
+
+
 # eShop Reference Application - "AdventureWorks"
 
 A reference .NET application implementing an e-commerce website using a services-based architecture using [.NET Aspire](https://learn.microsoft.com/dotnet/aspire/).
